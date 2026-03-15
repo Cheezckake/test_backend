@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>Розовый чизкейк</title>
+</head>
+<body>
+    <div class="container">
+        <h1>Розовый чизкейк</h1>
+
+        <!-- Товары -->
+        <div class="products">
+            <div class="product-card">
+                <div class="product-image"></div>
+                <div class="product-title">Форма для запекания</div>
+                <div class="product-price">1000 руб</div>
+                <div class="product-unit">в час</div>
+                <button class="add-to-cart" onclick="addToCart(1)">Добавить в корзину</button>
+            </div>
+
+            <div class="product-card">
+                <div class="product-image"></div>
+                <div class="product-title">Посыпка кондитерская</div>
+                <div class="product-price">100 руб</div>
+                <div class="product-unit">за штуку</div>
+                <button class="add-to-cart" onclick="addToCart(2)">Добавить в корзину</button>
+            </div>
+        </div>
+
+        <!-- Кнопка корзины -->
+        <button class="cart-toggle" onclick="toggleCart()">
+            Корзина
+            <span class="cart-count" id="cartCount">0</span>
+        </button>
+
+        <!-- Оверлей -->
+        <div class="overlay" id="overlay" onclick="toggleCart()"></div>
+
+        <!-- Выдвижная корзина -->
+        <div class="cart-sidebar" id="cartSidebar">
+            <div class="cart-header">
+                <h2>Корзина</h2>
+                <button class="close-cart" onclick="toggleCart()">&times;</button>
+            </div>
+
+            <div class="cart-items" id="cartItems">
+                <!-- Товары будут добавляться сюда -->
+            </div>
+
+            <div class="cart-footer">
+                <div class="cart-total">
+                    <span>Итого:</span>
+                    <span id="cartTotal">0 ₽</span>
+                </div>
+                <button class="checkout-btn" id="checkoutBtn" onclick="openOrderModal()">Оформить заказ</button>
+            </div>
+        </div>
+
+        <!-- Модальное окно оформления заказа -->
+        <div class="modal" id="orderModal">
+            <div class="modal-content">
+                <h2>Оформление заказа</h2>
+                
+                <form id="orderForm">
+                    <div class="form-group">
+                        <label for="name">Имя *</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="address">Адрес доставки *</label>
+                        <textarea id="address" name="address" required></textarea>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="cancel-btn" onclick="closeOrderModal()">Отмена</button>
+                        <button type="submit" class="order-btn">Заказать</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Уведомление -->
+        <div class="notification" id="notification"></div>
+    </div>
+
+    <script>
+        // ==================== КОНФИГУРАЦИЯ SUPABASE ====================
+        const SUPABASE_URL = 'https://odahvmaqnqmyrhmeazgg.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_ftztjo13zRtU1RZbaanAcg_ZnnnMlxl';
+
+        
+        const TABLES = {
+            users: 'users',
+            products: 'products',
+            orders: 'orders',
+            orderItems: 'order_items'
+        };
+
+        // Товары (должны быть в базе данных)
+        const PRODUCTS = {
+            1: { id: 1, name: 'Форма для запекания', price: 1000, unit: 'руб в час' },
+            2: { id: 2, name: 'Посыпка кондитерская', price: 100, unit: 'шт' }
+        };
+
+        // ==================== СОСТОЯНИЕ ПРИЛОЖЕНИЯ ====================
+        let cart = {}; // { productId: quantity }
+
+        // ==================== ФУНКЦИИ КОРЗИНЫ ====================
+        function toggleCart() {
+            const sidebar = document.getElementById('cartSidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+            renderCart();
+        }
+
+        function addToCart(productId) {
+            if (!cart[productId]) {
+                cart[productId] = 0;
+            }
+            cart[productId] += 1;
+            
+            updateCartCount();
+            renderCart();
+            // showNotification('Товар добавлен в корзину!');
+        }
+
+        function updateQuantity(productId, delta) {
+            const newQuantity = (cart[productId] || 0) + delta;
+            
+            if (newQuantity <= 0) {
+                delete cart[productId];
+            } else {
+                cart[productId] = newQuantity;
+            }
+            
+            updateCartCount();
+            renderCart();
+        }
+
+        function removeFromCart(productId) {
+            delete cart[productId];
+            updateCartCount();
+            renderCart();
+            // showNotification('Товар удален из корзины');
+        }
+
+        function updateCartCount() {
+            const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
+            document.getElementById('cartCount').textContent = totalItems;
+            
+            const checkoutBtn = document.getElementById('checkoutBtn');
+            checkoutBtn.disabled = totalItems === 0;
+        }
+
+        function calculateTotal() {
+            let total = 0;
+            for (const [productId, quantity] of Object.entries(cart)) {
+                total += PRODUCTS[productId].price * quantity;
+            }
+            return total;
+        }
+
+        function renderCart() {
+            const cartItemsContainer = document.getElementById('cartItems');
+            const cartTotalElement = document.getElementById('cartTotal');
+            
+            if (Object.keys(cart).length === 0) {
+                cartItemsContainer.innerHTML = '<div style="text-align: center; padding: 30px; color: #666;">Корзина пуста</div>';
+                cartTotalElement.textContent = '0 ₽';
+                return;
+            }
+
+            let html = '';
+            for (const [productId, quantity] of Object.entries(cart)) {
+                const product = PRODUCTS[productId];
+                html += `
+                    <div class="cart-item">
+                        <div class="cart-item-info">
+                            <h3>${product.name}</h3>
+                            <p>${product.price} ₽ × ${quantity}</p>
+                        </div>
+                        <div class="cart-item-controls">
+                            <button onclick="updateQuantity(${productId}, -1)">−</button>
+                            <span>${quantity}</span>
+                            <button onclick="updateQuantity(${productId}, 1)">+</button>
+                            <button class="remove-item" onclick="removeFromCart(${productId})">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            cartItemsContainer.innerHTML = html;
+            cartTotalElement.textContent = `${calculateTotal().toLocaleString()} ₽`;
+        }
+
+        // ==================== ФУНКЦИИ МОДАЛЬНОГО ОКНА ====================
+        function openOrderModal() {
+            if (Object.keys(cart).length === 0) {
+                showNotification('Корзина пуста!', 'error');
+                return;
+            }
+            document.getElementById('orderModal').classList.add('open');
+        }
+
+        function closeOrderModal() {
+            document.getElementById('orderModal').classList.remove('open');
+            document.getElementById('orderForm').reset();
+        }
+
+        // ==================== ФУНКЦИИ РАБОТЫ С БАЗОЙ ДАННЫХ ====================
+        async function createUser(userData) {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLES.users}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify({
+                        name: userData.name,
+                        email: userData.email,
+                        phone: userData.phone || '',
+                        address: userData.address
+                    })
+                });
+
+                if (!response.ok) throw new Error('Ошибка при создании пользователя');
+                
+                const data = await response.json();
+                return data[0]; // возвращаем созданного пользователя
+                
+            } catch (error) {
+                console.error('Error creating user:', error);
+                throw error;
+            }
+        }
+
+        async function createOrder(userId, totalAmount) {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLES.orders}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        total_amount: totalAmount
+                    })
+                });
+
+                if (!response.ok) throw new Error('Ошибка при создании заказа');
+                
+                const data = await response.json();
+                return data[0]; // возвращаем созданный заказ
+                
+            } catch (error) {
+                console.error('Error creating order:', error);
+                throw error;
+            }
+        }
+
+        async function createOrderItems(orderId, cart) {
+            try {
+                for (const [productId, quantity] of Object.entries(cart)) {
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLES.orderItems}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        },
+                        body: JSON.stringify({
+                            order_id: orderId,
+                            product_id: parseInt(productId),
+                            quantity: quantity
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('Ошибка при добавлении товаров в заказ');
+                }
+                
+            } catch (error) {
+                console.error('Error creating order items:', error);
+                throw error;
+            }
+        }
+
+        // ==================== ОБРАБОТКА ФОРМЫ ЗАКАЗА ====================
+        document.getElementById('orderForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Оформление...';
+            
+            try {
+                // Получаем данные из формы
+                const userData = {
+                    name: document.getElementById('name').value.trim(),
+                    email: document.getElementById('email').value.trim(),
+                    address: document.getElementById('address').value.trim()
+                };
+
+                // Валидация
+                if (!userData.name || !userData.email || !userData.address) {
+                    throw new Error('Заполните все поля');
+                }
+
+                // 1. Создаем пользователя
+                const user = await createUser(userData);
+                
+                // 2. Создаем заказ
+                const totalAmount = calculateTotal();
+                const order = await createOrder(user.id, totalAmount);
+                
+                // 3. Добавляем товары в заказ
+                await createOrderItems(order.id, cart);
+                
+                // 4. Очищаем корзину и закрываем модальное окно
+                cart = {};
+                updateCartCount();
+                renderCart();
+                closeOrderModal();
+                toggleCart(); // закрываем корзину
+                
+                showNotification(`Заказ #${order.id} успешно оформлен! Спасибо за покупку!`);
+                
+            } catch (error) {
+                showNotification(error.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Заказать';
+            }
+        });
+
+        // ==================== УВЕДОМЛЕНИЯ ====================
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            updateCartCount();
+            renderCart();
+            
+            // Проверяем, есть ли товары в базе, и создаем их если нет
+            checkAndCreateProducts();
+        });
+
+        async function checkAndCreateProducts() {
+            try {
+                // Проверяем, есть ли товары в базе
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/${TABLES.products}?select=id`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                
+                const products = await response.json();
+                
+                // Если товаров нет, создаем их
+                if (products.length === 0) {
+                    for (const product of Object.values(PRODUCTS)) {
+                        await fetch(`${SUPABASE_URL}/rest/v1/${TABLES.products}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                            },
+                            body: JSON.stringify({
+                                id: product.id,
+                                name: product.name,
+                                price: product.price,
+                                unit: product.unit
+                            })
+                        });
+                    }
+                    console.log('Товары созданы в базе данных');
+                }
+                
+            } catch (error) {
+                console.error('Ошибка при проверке/создании товаров:', error);
+            }
+        }
+    </script>
+</body>
+</html>
