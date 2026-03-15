@@ -259,13 +259,14 @@
                     body: JSON.stringify({
                         user_id: userId,
                         total_amount: totalAmount
+                        // order_date не отправляем - база сама подставит CURRENT_DATE
                     })
                 });
 
                 if (!response.ok) throw new Error('Ошибка при создании заказа');
                 
                 const data = await response.json();
-                return data[0]; // возвращаем созданный заказ
+                return data[0];
                 
             } catch (error) {
                 console.error('Error creating order:', error);
